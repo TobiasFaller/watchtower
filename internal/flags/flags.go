@@ -46,6 +46,12 @@ func RegisterSystemFlags(rootCmd *cobra.Command) {
 		viper.GetBool("WATCHTOWER_NO_PULL"),
 		"do not pull any new images")
 
+	flags.StringToStringP(
+		"pull-tags",
+		"",
+		viper.GetStringMapString("WATCHTOWER_PULL_TAGS"),
+		"pull a different tag instead of the used container tag")
+
 	flags.BoolP(
 		"no-restart",
 		"",

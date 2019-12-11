@@ -95,12 +95,14 @@ func PreRun(cmd *cobra.Command, args []string) {
 	includeStopped, _ := f.GetBool("include-stopped")
 	reviveStopped, _ := f.GetBool("revive-stopped")
 	removeVolumes, _ := f.GetBool("remove-volumes")
+	pullTags, _ := f.GetStringToString("pull-tags")
 
 	client = container.NewClient(
 		!noPull,
 		includeStopped,
 		reviveStopped,
 		removeVolumes,
+		pullTags,
 	)
 
 	notifier = notifications.NewNotifier(cmd)

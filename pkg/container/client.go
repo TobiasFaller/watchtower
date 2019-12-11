@@ -8,6 +8,7 @@ import (
 	"time"
 
 	t "github.com/containrrr/watchtower/pkg/types"
+	dockerreference "github.com/docker/distribution/reference"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -38,7 +39,7 @@ type Client interface {
 //  * DOCKER_HOST			the docker-engine host to send api requests to
 //  * DOCKER_TLS_VERIFY		whether to verify tls certificates
 //  * DOCKER_API_VERSION	the minimum docker api version to work with
-func NewClient(pullImages bool, includeStopped bool, reviveStopped bool, removeVolumes bool) Client {
+func NewClient(pullImages bool, includeStopped bool, reviveStopped bool, removeVolumes bool, pullTags map[string]string) Client {
 	cli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv)
 
 	if err != nil {
@@ -51,6 +52,7 @@ func NewClient(pullImages bool, includeStopped bool, reviveStopped bool, removeV
 		removeVolumes:  removeVolumes,
 		includeStopped: includeStopped,
 		reviveStopped:  reviveStopped,
+		pullTags:        pullTags,
 	}
 }
 
@@ -60,6 +62,7 @@ type dockerClient struct {
 	removeVolumes  bool
 	includeStopped bool
 	reviveStopped  bool
+	pullTags        map[string]string
 }
 
 func (client dockerClient) ListContainers(fn t.Filter) ([]Container, error) {
@@ -236,6 +239,11 @@ func (client dockerClient) IsContainerStale(c Container) (bool, error) {
 	imageName := c.ImageName()
 
 	if client.pullImages {
+		imageName, err := client.ModifyPullTag(imageName)
+		if err != nil {
+			return false, err
+		}
+
 		log.Debugf("Pulling %s for %s", imageName, c.Name())
 
 		var opts types.ImagePullOptions // ImagePullOptions can take a RegistryAuth arg to authenticate against a private registry
@@ -277,6 +285,37 @@ func (client dockerClient) IsContainerStale(c Container) (bool, error) {
 
 	log.Debugf("No new images found for %s", c.Name())
 	return false, nil
+}
+
+func (client dockerClient) ModifyPullTag(imageName string) (string, error) {
+	if len(client.pullTags) == 0 {
+		return imageName, nil
+	}
+
+	named, error := dockerreference.ParseNormalizedNamed(imageName)
+	if error != nil {
+		return "", error
+	}
+
+	shortName := dockerreference.FamiliarName(named)
+
+	var newTag string
+	if mapping, ok := client.pullTags[shortName]; ok {
+		newTag = mapping
+	} else if mapping, ok := client.pullTags["*"]; ok {
+		newTag = mapping
+	} else {
+		// No mapping found and no default mapping found
+		return imageName, nil
+	}
+
+	// Name was mapped
+	named, error = dockerreference.WithTag(named, newTag)
+	if error != nil {
+		return "", error
+	}
+
+	return named.String(), nil
 }
 
 func (client dockerClient) RemoveImage(c Container) error {
